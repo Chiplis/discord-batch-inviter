@@ -14,6 +14,10 @@ struct Args {
     #[clap(short, long)]
     token: String,
 
+    /// Invite channel ID
+    #[clap(short, long)]
+    id: u64,
+
     /// Number of invites to generate.
     #[clap(short, long, default_value_t = 1000)]
     count: u16,
@@ -27,6 +31,7 @@ fn main() {
     let mut count = 0;
     let args = Args::parse();
     let token = &args.token.to_owned();
+    let id = &args.id;
     let ds = Discord::from_user_token(token).unwrap();
     let file_name = format!("invites_{:?}", SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs()).to_owned();
     let mut file = OpenOptions::new().append(true).create(true).open(file_name).unwrap();
@@ -34,7 +39,7 @@ fn main() {
     for _ in 0..=args.count / 5  {
         for _ in 0..5 {
             count += 1;
-            let code = ds.create_invite(ChannelId(966448749222166581), 604800 - count, 1, false).unwrap().code;
+            let code = ds.create_invite(ChannelId(*id), 604800 - count, 1, false).unwrap().code;
             let invite = format!("discord.gg/{code}\n");
             println!("{invite}");
             file.write_all(invite.as_bytes()).unwrap();
