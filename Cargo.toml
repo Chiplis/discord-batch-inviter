@@ -7,4 +7,4 @@ edition = "2021"
 
 [dependencies]
 clap = { version = "3.1.10", features = ["derive"] }
-discord = { git = "https://github.com/nicolas-siplis/discord-rs", branch = 'master' }
+discord = { path = "/home/nsiplis/discord-rs" }
