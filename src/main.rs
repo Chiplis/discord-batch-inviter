@@ -5,7 +5,7 @@ use std::thread::sleep;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use discord::Discord;
 use discord::model::{ChannelId};
-use clap::{Parser};
+use clap::{Parser, CommandFactory};
 
 /// Simple Discord script to automatically generate mass invites
 #[derive(Parser, Debug)]
@@ -64,7 +64,9 @@ impl RateLimit {
 }
 
 fn main() {
-    let Args { token, delete, id, amount, lifetime, max_uses, timeout, batch_size } = Args::parse();
+    let _ = Args::command().term_width(0).get_matches();
+    let args = Args::parse();
+    let Args { token, delete, id, amount, lifetime, max_uses, timeout, batch_size } = args;
 
     let rate_limit = RateLimit { timeout, batch_size };
 
