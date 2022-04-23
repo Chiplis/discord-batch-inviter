@@ -11,11 +11,15 @@ use clap::{Parser, CommandFactory};
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
 struct Args {
+    /// Bot token: https://www.writebots.com/discord-bot-token/
+    #[clap(short, long, conflicts_with = "user")]
+    bot: Option<String>,
+
     /// User token: https://www.online-tech-tips.com/computer-tips/what-is-a-discord-token-and-how-to-get-one/
     #[clap(short, long)]
-    token: String,
+    user: Option<String>,
 
-    /// Delete all non-accepted invites contained in the specified file
+    /// Delete all active invites contained in the specified file
     #[clap(short, long)]
     delete: Option<String>,
 
@@ -35,18 +39,18 @@ struct Args {
     #[clap(short, long, default_value_t = 1)]
     max_uses: u8,
 
-    /// Number of operations per batch.
+    /// Number of operations per round.
     #[clap(short, long, default_value_t = 5)]
-    batch_size: u8,
+    round_size: u8,
 
-    /// Seconds to wait between batches of operations.
+    /// Seconds to wait between round of operations.
     #[clap(short, long, default_value_t = 15)]
     timeout: u8
 }
 
 struct RateLimit {
     timeout: u8,
-    batch_size: u8
+    round_size: u8
 }
 
 impl RateLimit {
@@ -55,7 +59,7 @@ impl RateLimit {
         for arg in args {
             rate_limiter += 1;
             op(arg);
-            rate_limiter %= self.batch_size;
+            rate_limiter %= self.round_size;
             if rate_limiter == 0 {
                 sleep(Duration::from_secs(self.timeout as u64));
             }
@@ -66,14 +70,21 @@ impl RateLimit {
 fn main() {
     let _ = Args::command().term_width(0).get_matches();
     let args = Args::parse();
-    let Args { token, delete, id, amount, lifetime, max_uses, timeout, batch_size } = args;
+    let Args { bot, user, delete, id, amount, lifetime, max_uses, timeout, round_size } = args;
 
-    let rate_limit = RateLimit { timeout, batch_size };
+    let rate_limit = RateLimit { timeout, round_size };
 
     let channel = ChannelId(id);
     let count = min(amount, 100);
 
-    let ds = Discord::from_user_token(&token).unwrap();
+
+    let ds = if let Some(u) = user {
+        Discord::from_user_token(&u)
+    } else if let Some(b) = bot {
+        Discord::from_bot_token(&b)
+    } else {
+        unreachable!()
+    }.expect("Error creating Discord client.");
 
     println!();
 
@@ -86,14 +97,14 @@ fn main() {
 fn delete_invites(ds: Discord, invites_file: String, channel: ChannelId, rate_limit: RateLimit) {
     let invite_codes: Vec<String> = match invites_file.as_str() {
         "" => {
-            println!("No invite file specified, deleting all channel invites");
-            ds.get_channel_invites(channel).expect("Error getting all channel invites to delete").iter().map(|ri| ri.code.clone()).collect()
+            println!("No invite file specified, deleting all channel invites.");
+            ds.get_channel_invites(channel).expect("Error getting all channel invites to delete.").iter().map(|ri| ri.code.clone()).collect()
         },
-        _ => BufReader::new(File::open(invites_file).expect("Error opening file with invites to delete")).lines().into_iter().map(|l| l.unwrap()).collect()
+        _ => BufReader::new(File::open(invites_file).expect("Error opening file with invites to delete.")).lines().into_iter().map(|l| l.unwrap()).collect()
     };
     rate_limit.execute(invite_codes, |code| {
         if let Err(e) = ds.delete_invite(&code) {
-            println!("Error while deleting invite {code}, continuing with next: {e}");
+            println!("Error while deleting invite {code}, continuing with next: {e}.");
         } else {
             println!("Successfully deleted {code}.");
         }
