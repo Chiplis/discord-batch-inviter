@@ -19,13 +19,14 @@ struct Args {
     #[clap(short, long)]
     user: Option<String>,
 
-    /// Delete all active invites contained in the specified file
+    /// Delete all active invites contained in the specified file.
+    /// A blank filename will delete all invites for specified channel ID (requires -i).
     #[clap(short, long)]
     delete: Option<String>,
 
     /// Invite channel ID.
     #[clap(short, long)]
-    id: u64,
+    id: Option<u64>,
 
     /// Amount of invites to generate (max = 1000).
     #[clap(short, long, default_value_t = 1000)]
@@ -90,7 +91,7 @@ fn main() {
         round_size,
     };
 
-    let channel = ChannelId(id);
+    let channel = id.map(ChannelId);
     let max_uses = min(max_uses, 100);
     let amount = min(amount, 1000);
     let lifetime = min(lifetime, 604800);
@@ -108,23 +109,43 @@ fn main() {
 
     match delete {
         Some(d) => delete_invites(ds, d, channel, rate_limit),
-        None => create_invites(ds, amount, id, lifetime, max_uses, rate_limit),
+        None => create_invites(
+            ds,
+            amount,
+            id.expect("Channel ID (-i) required when creating invites"),
+            lifetime,
+            max_uses,
+            rate_limit,
+        ),
     }
 }
 
-fn delete_invites(ds: Discord, invites_file: String, channel: ChannelId, rate_limit: RateLimit) {
-    let invite_codes: Vec<String> = match invites_file.as_str().trim() {
-        "" => {
-            println!("No invite file specified, deleting all channel invites.");
+fn delete_invites(
+    ds: Discord,
+    invites_file: String,
+    channel: Option<ChannelId>,
+    rate_limit: RateLimit,
+) {
+    let invite_codes: Vec<String> = match (channel, invites_file.as_str().trim()) {
+        (Some(channel), "") => {
+            println!(
+                "No invite file specified, deleting all channel invites for channel #{channel}."
+            );
             ds.get_channel_invites(channel)
-                .expect("Error getting all channel invites to delete.")
+                .expect("Error fetching channel invites to delete.")
                 .iter()
                 .map(|ri| ri.code.clone())
                 .collect()
         }
-        _ => BufReader::new(
-            File::open(invites_file).expect("Error opening file with invites to delete."),
-        )
+        (None, "") => panic!(
+            "Attempted to delete all invites for channel without the required channel ID (-i)"
+        ),
+        (channel, path) => {
+            if channel != None {
+                println!("Ignoring channel ID (-i) argument because a file was specified: {path}")
+            }
+            BufReader::new(File::open(path).expect("Error opening file with invites to delete."))
+        }
         .lines()
         .into_iter()
         .map(|l| l.unwrap())
@@ -160,17 +181,14 @@ fn create_invites(
         .create(true)
         .open(file_name)
         .unwrap();
-    rate_limit.execute(
-        (1..=amount).into_iter().collect(),
-        move |invite_count| {
-            println!("{invite_count} / {amount}");
-            let code = ds
-                .create_invite(ChannelId(id), max_age, max_uses, false, true)
-                .unwrap()
-                .code;
-            let invite = format!("discord.gg/{code}\n");
-            println!("{invite}");
-            file.write_all(invite.as_bytes()).unwrap();
-        },
-    );
+    rate_limit.execute((1..=amount).into_iter().collect(), move |invite_count| {
+        println!("{invite_count} / {amount}");
+        let code = ds
+            .create_invite(ChannelId(id), max_age, max_uses, false, true)
+            .unwrap()
+            .code;
+        let invite = format!("discord.gg/{code}\n");
+        println!("{invite}");
+        file.write_all(invite.as_bytes()).unwrap();
+    });
 }
